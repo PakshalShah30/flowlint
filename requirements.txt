@@ -1,0 +1,4 @@
+# FlowLint has zero runtime dependencies — it's built entirely on the
+# Python standard library (xml.etree.ElementTree, argparse, dataclasses).
+# This file exists for tooling that expects one; install for development/tests:
+pytest>=7.4

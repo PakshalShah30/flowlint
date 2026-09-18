@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flowlint"
+version = "0.1.0"
+description = "Static analysis for Salesforce Flow metadata XML — ESLint, but for Flows."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Pakshal Shah", email = "pakshal.m.shah@gmail.com" }
+]
+keywords = ["salesforce", "flow", "static-analysis", "linter", "ci", "devops"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://pakshalshah.com"
+Repository = "https://github.com/pakshalshah/flowlint"
+
+[project.scripts]
+flowlint = "flowlint.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
