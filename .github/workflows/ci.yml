@@ -32,15 +32,3 @@ jobs:
       - name: Lint the bundled fixtures (expected to fail — that's the demo)
         run: flowlint fixtures/ --format table
         continue-on-error: true
-
-  # Example of how a real consuming repo would gate merges on FlowLint. Point
-  # `flowlint` at your own force-app/**/flows directory and drop continue-on-error.
-  lint-flows-example:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install flowlint
-      - run: flowlint force-app/main/default/flows/ --format table

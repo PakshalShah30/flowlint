@@ -26,7 +26,7 @@ dependencies = []
 
 [project.urls]
 Homepage = "https://pakshalshah.com"
-Repository = "https://github.com/pakshalshah/flowlint"
+Repository = "https://github.com/pakshalshah30/flowlint"
 
 [project.scripts]
 flowlint = "flowlint.cli:main"

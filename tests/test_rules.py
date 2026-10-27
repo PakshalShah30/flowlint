@@ -39,6 +39,32 @@ def _findings_for(findings, filename):
     return [f for f in findings if os.path.basename(f.file) == filename]
 
 
+def _write_flow(directory, api_name, body, status="Active", process_type="AutoLaunchedFlow"):
+    path = directory / f"{api_name}.flow-meta.xml"
+    path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<Flow xmlns="http://soap.sforce.com/2006/04/metadata">'
+        f"<label>{api_name}</label><processType>{process_type}</processType>"
+        f"<status>{status}</status>{body}</Flow>",
+        encoding="utf-8",
+    )
+    return str(path)
+
+
+def _record_triggered_rating_writer(trigger_type):
+    return (
+        "<recordUpdates><name>Set_Rating</name><inputReference>$Record</inputReference>"
+        "<inputAssignments><field>Rating</field><value><stringValue>Hot</stringValue></value>"
+        "</inputAssignments><faultConnector><targetReference>X</targetReference></faultConnector>"
+        "</recordUpdates>"
+        "<start><object>Lead</object>"
+        f"<recordTriggerType>{trigger_type}</recordTriggerType>"
+        "<triggerType>RecordAfterSave</triggerType>"
+        "<filters><field>Rating</field><operator>NotEqualTo</operator>"
+        "<value><stringValue>Hot</stringValue></value></filters></start>"
+    )
+
+
 # ---------------------------------------------------------------------------
 # FL001 — Missing fault path
 # ---------------------------------------------------------------------------
@@ -124,6 +150,30 @@ def test_dead_automation_silent_when_referenced_via_subflow(flows):
     assert hits == []
 
 
+def test_dead_automation_ignores_name_embedded_in_longer_identifier(tmp_path):
+    # 'Router' appearing inside 'Old_Lead_Router' is not a reference to Router.
+    _write_flow(tmp_path, "Router", "")
+    _write_flow(
+        tmp_path,
+        "Caller",
+        "<subflows><name>Call_It</name><flowName>Old_Lead_Router</flowName></subflows>",
+        status="Draft",
+    )
+    findings = rule_dead_automation(parse_all(str(tmp_path)))
+    assert [f.element for f in findings] == ["Router"]
+
+
+def test_dead_automation_silent_when_referenced_by_exact_name(tmp_path):
+    _write_flow(tmp_path, "Router", "")
+    _write_flow(
+        tmp_path,
+        "Caller",
+        "<subflows><name>Call_It</name><flowName>Router</flowName></subflows>",
+        status="Draft",
+    )
+    assert rule_dead_automation(parse_all(str(tmp_path))) == []
+
+
 # ---------------------------------------------------------------------------
 # FL005 — Conflicting automation
 # ---------------------------------------------------------------------------
@@ -141,6 +191,35 @@ def test_conflicting_automation_fires_on_both_lead_rating_flows(flows):
 def test_conflicting_automation_silent_on_clean_fixture(flows, clean_flow):
     findings = rule_conflicting_automation([clean_flow])
     assert findings == []
+
+
+def test_conflicting_automation_fires_across_update_and_create_and_update(tmp_path):
+    _write_flow(tmp_path, "On_Update", _record_triggered_rating_writer("Update"))
+    _write_flow(tmp_path, "On_Save", _record_triggered_rating_writer("CreateAndUpdate"))
+    findings = rule_conflicting_automation(parse_all(str(tmp_path)))
+    assert len(findings) == 2
+    assert all("Lead.Rating on Update," in f.message for f in findings)
+
+
+def test_conflicting_automation_reports_each_writer_once_across_events(tmp_path):
+    _write_flow(tmp_path, "Save_A", _record_triggered_rating_writer("CreateAndUpdate"))
+    _write_flow(tmp_path, "Save_B", _record_triggered_rating_writer("CreateAndUpdate"))
+    findings = rule_conflicting_automation(parse_all(str(tmp_path)))
+    assert len(findings) == 2
+    assert all("on Create and Update," in f.message for f in findings)
+
+
+def test_conflicting_automation_silent_for_create_vs_update(tmp_path):
+    _write_flow(tmp_path, "On_Create", _record_triggered_rating_writer("Create"))
+    _write_flow(tmp_path, "On_Update", _record_triggered_rating_writer("Update"))
+    assert rule_conflicting_automation(parse_all(str(tmp_path))) == []
+
+
+def test_non_utf8_file_reports_its_path(tmp_path):
+    bad = tmp_path / "Bad.flow-meta.xml"
+    bad.write_bytes(b"\xff\xfe<bad")
+    with pytest.raises(ValueError, match="Bad.flow-meta.xml"):
+        parse_all(str(tmp_path))
 
 
 # ---------------------------------------------------------------------------
