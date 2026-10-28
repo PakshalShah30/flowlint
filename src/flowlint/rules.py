@@ -165,11 +165,16 @@ def rule_dead_automation(flows: list[Flow]) -> list[Finding]:
             # (subflow, Process Builder, Apex, a Flow button) that have lost
             # their last caller.
             continue
+        # Match the API name as a whole token, so 'Router' isn't counted as
+        # referenced just because another file mentions 'Old_Lead_Router'.
+        name_re = re.compile(
+            rf"(?<![A-Za-z0-9_]){re.escape(flow.api_name)}(?![A-Za-z0-9_])"
+        )
         referenced = False
         for other in flows:
             if other.path == flow.path:
                 continue
-            if flow.api_name in other.raw_text:
+            if name_re.search(other.raw_text):
                 referenced = True
                 break
         if not referenced:
@@ -185,8 +190,8 @@ def rule_dead_automation(flows: list[Flow]) -> list[Finding]:
                         "call, no Apex/LWC reference captured here, nothing. "
                         "Confirm this automation is still wired to something "
                         "(a Process Builder, a Platform Event, a button) before "
-                        "trusting it; otherwise it's dead weight that still runs "
-                        "on every record save."
+                        "trusting it; otherwise it's dead weight that still counts "
+                        "as Active automation and misleads whoever maintains the org next."
                     ),
                 )
             )
@@ -197,8 +202,18 @@ def rule_dead_automation(flows: list[Flow]) -> list[Finding]:
 # FL005 — Conflicting automation
 # ---------------------------------------------------------------------------
 
+# The save events each recordTriggerType fires on. A CreateAndUpdate flow
+# overlaps with both a Create flow and an Update flow on the same object.
+TRIGGER_EVENTS = {
+    "Create": ("Create",),
+    "Update": ("Update",),
+    "CreateAndUpdate": ("Create", "Update"),
+    "Delete": ("Delete",),
+}
+
+
 def rule_conflicting_automation(flows: list[Flow]) -> list[Finding]:
-    # key -> list of (flow, element)
+    # (object, event, field) -> list of (flow, element)
     writers: dict[tuple[str, str, str], list[tuple[Flow, str]]] = {}
     for flow in flows:
         if not flow.is_active or not flow.is_record_triggered:
@@ -211,32 +226,47 @@ def rule_conflicting_automation(flows: list[Flow]) -> list[Finding]:
             if elem.kind != "recordUpdates":
                 continue
             for write in elem.field_writes:
-                key = (obj, trigger, write.field)
-                writers.setdefault(key, []).append((flow, elem.name))
+                for event in TRIGGER_EVENTS.get(trigger, (trigger,)):
+                    key = (obj, event, write.field)
+                    writers.setdefault(key, []).append((flow, elem.name))
 
-    findings = []
-    for (obj, trigger, field_name), entries in writers.items():
+    # Two CreateAndUpdate flows collide on both Create and Update; report each
+    # (flow, element, field) once, listing every event the conflict covers.
+    conflicts: dict[tuple[str, str, str, str], dict] = {}
+    for (obj, event, field_name), entries in writers.items():
         distinct_flows = {f.api_name for f, _ in entries}
         if len(distinct_flows) < 2:
             continue
-        names = sorted(distinct_flows)
         for flow, elem_name in entries:
-            others = sorted(n for n in distinct_flows if n != flow.api_name)
-            findings.append(
-                Finding(
-                    rule_id="FL005",
-                    severity="warning",
-                    file=flow.path,
-                    element=elem_name,
-                    message=(
-                        f"'{flow.api_name}' writes {obj}.{field_name} on "
-                        f"{trigger}, and so does {', '.join(others)}. Two Active "
-                        "flows on the same object/trigger writing the same field "
-                        "race each other — the final value depends on flow "
-                        f"execution order. All flows involved: {', '.join(names)}."
-                    ),
-                )
+            key = (flow.path, elem_name, obj, field_name)
+            conflict = conflicts.setdefault(
+                key, {"flow": flow, "events": [], "flows": set()}
             )
+            if event not in conflict["events"]:
+                conflict["events"].append(event)
+            conflict["flows"] |= distinct_flows
+
+    findings = []
+    for (path, elem_name, obj, field_name), conflict in conflicts.items():
+        flow = conflict["flow"]
+        names = sorted(conflict["flows"])
+        others = [n for n in names if n != flow.api_name]
+        events = " and ".join(conflict["events"])
+        findings.append(
+            Finding(
+                rule_id="FL005",
+                severity="warning",
+                file=path,
+                element=elem_name,
+                message=(
+                    f"'{flow.api_name}' writes {obj}.{field_name} on "
+                    f"{events}, and so does {', '.join(others)}. Two Active "
+                    "flows on the same object/trigger writing the same field "
+                    "race each other — the final value depends on flow "
+                    f"execution order. All flows involved: {', '.join(names)}."
+                ),
+            )
+        )
     return findings
 
 

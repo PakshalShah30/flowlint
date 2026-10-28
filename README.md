@@ -33,7 +33,7 @@ them before they merge.
 ## Install
 
 ```bash
-git clone https://github.com/pakshalshah/flowlint.git
+git clone https://github.com/pakshalshah30/flowlint.git
 cd flowlint
 pip install -e .
 ```
@@ -93,7 +93,8 @@ Old_Lead_Router.flow-meta.xml
       'Old_Lead_Router' is Active but its API name does not appear anywhere else in the scanned folder
       — no subflow call, no Apex/LWC reference captured here, nothing. Confirm this automation is
       still wired to something (a Process Builder, a Platform Event, a button) before trusting it;
-      otherwise it's dead weight that still runs on every record save.
+      otherwise it's dead weight that still counts as Active automation and misleads whoever maintains
+      the org next.
 
 Opportunity_Stage_Sync.flow-meta.xml
 ------------------------------------
@@ -124,7 +125,7 @@ $ echo $?
 | FL002 | Hardcoded Salesforce ID | error | A 15- or 18-character literal that looks like a Salesforce record ID (mixed case + digits) inside any flow element's values. |
 | FL003 | Recursion risk | warning | A record-triggered flow (`recordTriggerType` of `Update`/`CreateAndUpdate`) with no entry criteria (`filters`) that updates its own triggering record (`$Record`). |
 | FL004 | Dead automation | warning | An `Active`, non-record-triggered flow (i.e. meant to be called by name — subflow, Process Builder, Apex, a button) whose API name never appears in any other scanned file. |
-| FL005 | Conflicting automation | warning | Two or more `Active` record-triggered flows on the same object and `recordTriggerType` that write the same field. |
+| FL005 | Conflicting automation | warning | Two or more `Active` record-triggered flows on the same object that write the same field on an overlapping save event (`CreateAndUpdate` overlaps with both `Create` and `Update`). |
 
 **Note on FL004's scope:** record-triggered flows are invoked automatically
 by the platform whenever their object is saved — they are never "referenced
@@ -190,7 +191,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install flowlint
+      - run: pip install git+https://github.com/pakshalshah30/flowlint.git
       - run: flowlint force-app/main/default/flows/ --format table
 ```
 

@@ -165,6 +165,6 @@ def parse_all(root_path: str) -> list[Flow]:
     for path in find_flow_files(root_path):
         try:
             flows.append(parse_flow(path))
-        except ET.ParseError as exc:
+        except (ET.ParseError, UnicodeDecodeError) as exc:
             raise ValueError(f"Could not parse {path}: {exc}") from exc
     return flows
